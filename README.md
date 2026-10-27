@@ -82,6 +82,65 @@ numbered options and an exact "Reply with" line.
 
 That's the whole loop. You never call the tracker or the router yourself: the sessions do.
 
+## How work moves
+
+Everything the fleet does is an item in the tracker, and each kind of item has its own path to
+"done". You can follow any of them on the program's page or by asking the driver.
+
+| Item | What it is | How it gets to done |
+|---|---|---|
+| **Program** | The work you brought in: a destination written as checkable statements, plus notes and open questions | Closes only when every child is closed and each destination line has proof: a passing release run, or your own sign-off on lines that name you |
+| **Project** | One piece of the program, with a spec: problem, solution, user stories, decisions, testing, out of scope | Its spec must be **accepted by a session that didn't write it**; then its tickets are cut, built, and closed |
+| **Ticket** | One agent session's worth of work, with acceptance criteria and dependencies | Moves through five gates (below) |
+| **Decision** | A question to settle before work can go on: research, a prototype, or a grilling | Closes with a written resolution, which later work cites |
+| **Question for you** | An *ask*: one question, a recommendation, and numbered options | Blocks exactly the work that waits on it until you answer or it's withdrawn |
+| **Findings ticket** | Work whose result is findings, not code: an audit, a review, a diagnosis | framed → specd → reviewed → verified, with the findings checked by someone else |
+
+### A ticket's five gates
+
+```
+framed ──▶ specd ──▶ built ──▶ merged ──▶ verified
+```
+
+| Gate | Opens when |
+|---|---|
+| **specd** | The ticket is complete enough to build: its own spec, or the project's spec, has been accepted by an independent session |
+| **built** | A PR (or "no repo change") and a passing test run are recorded at the same commit, and every real choice the builder made is logged |
+| **merged** | The change is rated for risk and has the review its rating requires (below), and the merge is recorded |
+| **verified** | Every acceptance criterion has its own passing check, at a commit that contains the merge |
+
+A gate that isn't met refuses and names what's missing. "I'm done" never opens one.
+
+### Independent review, built in
+
+The tracker checks *who* recorded each piece of evidence, not just that it exists:
+
+- A spec is accepted by a session that wrote none of it.
+- A build is audited by a separate session. An auditor reads the builder's logged choices and rules
+  on each one: sound, risky or wrong. Every risky or wrong ruling is fixed or settled before the
+  merge.
+- Findings are checked by a session that didn't write them.
+- A subagent shares its parent's session, so it can never review its parent's work. Independence
+  needs a separate session.
+- Only a person can approve a RED change. An agent that records an approval is refused.
+
+### Merging by risk
+
+Each repo has a `.trk/blast-radius` file that maps paths to risk: for example,
+`RED migrations/**` or `YELLOW src/billing/**`. Before a ticket merges, its diff is rated against
+that file, and the rating decides how much review it needs:
+
+| Rating | Merges after | Your attention |
+|---|---|---|
+| **GREEN** | Green CI | None |
+| **YELLOW** | Green CI plus an independent audit, with every finding fixed or settled | None, unless the audit raises a question |
+| **RED** | All of the above, plus **your** approval | One question in your queue, with a written brief |
+
+A RED change reaches you with a nine-part brief instead of a diff: the decision, what changes and
+why, why it's RED, the impact if it's wrong, the evidence, the rollback, the criteria to approve
+or hold, where to look, and a recommendation. Your review goes where it matters, and GREEN work
+never waits on you. A change to the `.trk/blast-radius` file itself is always RED.
+
 ## What you'll see
 
 <!-- screenshot: docs/images/needs-you.png
@@ -230,6 +289,34 @@ Replaced skills and scripts are backed up to `~/.local/share/{trk,hx}-skill-back
 background process is the router service, which uses no model and doesn't poll.
 `./install.sh --uninstall` removes all of this except your data, your config and the clones, and
 prints the two commands that remove the plugins.
+
+### Optional: the status line
+
+workbench also includes a status line for the bottom of every Claude Code session: where you are,
+the model, how full the context is (measured against the auto-compact level), your session and
+weekly usage with their reset times, the cost, and which login you're on.
+
+```
+/Users/…/myapp [myapp] Sonnet 5.5 ctx 19% (184k/967k)
+session 37% (resets 4:02 PM CDT) · week 21% (resets Sat 1:22 AM CDT) · $3.42
+alex@example.com · Example Co
+```
+
+It's a plain script, not a plugin, so the installer leaves it alone. To use it (it needs `jq`;
+on a Mac, `brew install jq`):
+
+```bash
+cp ~/src/workbench/statusline/statusline.sh ~/.claude/statusline.sh
+```
+
+Then add this to `~/.claude/settings.json`:
+
+```json
+"statusLine": { "type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/statusline.sh\"" }
+```
+
+Set `STATUSLINE_TZ` (for example `America/Chicago`) to pin the time zone. To remove it, delete the
+`statusLine` entry.
 
 ### Installer options
 
