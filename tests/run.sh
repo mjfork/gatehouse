@@ -179,6 +179,29 @@ t_uninstall_runs_each_installer() {
   teardown
 }
 
+t_an_old_python_stops_before_anything_is_cloned() {
+  setup
+  for c in python3 python3.12 python3.13 python3.14; do
+    printf '#!/bin/sh\ncase "$*" in *"version_info < (3, 12)"*) exit 1;; esac\nexec %s "$@"\n' "$(command -v python3)" >"$T/bin/$c"
+    chmod +x "$T/bin/$c"
+  done
+  out=$("$T/gh/install.sh" 2>&1); code=$?
+  check "old python: refused" test "$code" = 1
+  check "old python: says 3.12" grep -q "python 3.12 or newer is required" <<<"$out"
+  check "old python: nothing cloned" test ! -e "$HOME/src"
+  teardown
+}
+
+t_a_finished_run_says_what_it_installed_and_how_to_check() {
+  setup; out=$("$T/gh/install.sh" 2>&1)
+  check "summary: trk pin" grep -q "installed: trk $(git -C "$T/repos/trk" rev-list --max-parents=0 HEAD)" <<<"$out"
+  check "summary: plugins" grep -q "installed: workbench plugins cockpit" <<<"$out"
+  check "summary: checks" grep -q "claude plugin list" <<<"$out"
+  out=$("$T/gh/install.sh" --dry-run 2>&1)
+  check "summary: a dry run says nothing changed" grep -q "dry run: nothing was changed" <<<"$out"
+  teardown
+}
+
 t_unknown_option_is_refused() {
   setup; "$T/gh/install.sh" --nod-agent >/dev/null 2>&1; code=$?
   check "unknown: exit 2" test "$code" = 2

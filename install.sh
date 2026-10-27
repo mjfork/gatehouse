@@ -77,6 +77,19 @@ need python3 "it reads versions.toml"
 need uv "trk and hx install with it (https://docs.astral.sh/uv/)"
 [ "$HX" = 1 ] && need herdr "hx opens Spaces and wakes panes in herdr; use --no-hx for trk alone"
 [ "$PLUGINS_ON" = 1 ] && need claude "the workbench plugins install into Claude Code; use --no-plugins to skip"
+# trk and hx need Python 3.12 or newer on PATH; their installers look for python3, then python3.14..3.12.
+has_python312() {
+  local c
+  for c in python3 python3.14 python3.13 python3.12; do
+    command -v "$c" >/dev/null && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>/dev/null && return 0
+  done
+  return 1
+}
+if [ "$UNINSTALL" != 1 ] && ! has_python312; then
+  hint="install one and put it on PATH"
+  [ "$(uname -s)" = Darwin ] && hint="macOS's own python3 is $(python3 -c 'import platform; print(platform.python_version())' 2>/dev/null); run: brew install python@3.12"
+  die "python 3.12 or newer is required by trk and hx; $hint"
+fi
 
 url_of() { if [ -n "${GATEHOUSE_REPO_BASE:-}" ]; then echo "$GATEHOUSE_REPO_BASE/$1"; else pin "$1" repo; fi; }
 
@@ -176,4 +189,17 @@ if [ "$PLUGINS_ON" = 1 ]; then
   done
 fi
 
-say "done: trk $(pin trk commit)$([ "$HX" = 1 ] && echo ", hx $(pin hx commit)")"
+[ "$DRY" = 1 ] && { say "dry run: nothing was changed"; exit 0; }
+echo
+say "installed: trk ${TRK_PIN:=$(pin trk commit)}"
+[ "$HX" = 1 ] && say "installed: hx $(pin hx commit)"
+[ "$PLUGINS_ON" = 1 ] && say "installed: workbench plugins ${WANTED[*]} at $(pin workbench commit)"
+cat <<EOF
+
+Check it worked:
+  trk --version
+$([ "$HX" = 1 ] && echo "  hx reconcile --dry-run")
+$([ "$PLUGINS_ON" = 1 ] && echo "  claude plugin list")
+
+Then write your first ticket: see "Quick start" in $HERE/README.md
+EOF
