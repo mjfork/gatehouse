@@ -3,11 +3,11 @@
 
 [trk]
 repo = "https://github.com/mjfork/trk"
-commit = "671c4507c88c76505fc615520c43a2a386c8ff9b"
+commit = "7ad16d090ef0204a49e6d6bbdcc766e884250d64"
 
 [hx]
 repo = "https://github.com/mjfork/hx"
-commit = "175e440a8c7341eeb9e1161ae160e7608ce5ae94"
+commit = "75228f0673ff1322353ae5f9e58bc76ad9f22b17"
 
 [workbench]
 # Claude Code plugins, installed from the marketplace (it follows GitHub; the commit is the one
