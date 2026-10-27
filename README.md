@@ -4,90 +4,156 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Run many Claude Code agents at once, and see only the decisions that need you.**
+**Bring in the work. A fleet of token-efficient agents drives it to done. You see only the
+decisions that need you.**
 
 ```bash
 git clone https://github.com/mjfork/gatehouse ~/src/gatehouse && ~/src/gatehouse/install.sh
 ```
 
 Linux and macOS · needs [herdr](https://herdr.dev), [Claude Code](https://claude.com/claude-code),
-[uv](https://docs.astral.sh/uv/) and Python 3.12+ · [prerequisites](#install)
+[uv](https://docs.astral.sh/uv/) and Python 3.12+ · [prerequisites](#install) ·
+[what gets installed where](#what-gets-installed-and-where)
 
 </div>
 
-## TL;DR
+<!-- screenshot: docs/images/overview.png
+     A herdr window mid-run: driver pane, three worker panes, the needs-you list on the left
+     (highlight it), and one footer (highlight ⚑ and the cache timer). -->
 
-**The problem:** with six Claude Code sessions running, you're the bottleneck in the wrong way. One
-of them has been sitting on a question for forty minutes in a pane you weren't looking at. Another
-says "done", and you have to read the diff to find out whether it is. Your attention goes to
-checking on agents instead of deciding things.
+## The idea
 
-**The solution:** gatehouse sets up three tools that change who waits for whom:
-- Agents work tickets from a tracker.
-- The tracker's gates refuse "done" without evidence.
-- When an agent needs a decision, the question comes to you, sorted by how much work it holds up.
-- You answer in a word, and the agent that asked carries on.
+Work is defined somewhere else: an upstream ticket in JIRA or Azure DevOps, a GitHub issue, a doc,
+or an idea in your head. gatehouse takes it from there:
+
+1. **Bring it in.** One command reads the ticket or your description and charts it with you: the
+   problem, what "done" looks like as checkable statements, the open decisions, and the projects.
+2. **Build the tree.** Projects get specs, specs get tickets, and tickets get dependencies, all
+   sized so one agent session can do each piece.
+3. **Turn the fleet loose.** A driver session runs the program. It starts worker sessions, gives
+   each the cheapest model that will pass first time, keeps every slot busy, and checks every
+   result.
+4. **Decide, don't babysit.** When anything needs a person, it reaches you in one queue, sorted
+   by how much work it holds up. Answer it, and the agent that asked carries on.
+
+Nothing moves to "done" on an agent's say-so. Stage gates need the evidence on record first: the
+PR, a passing test run, an independent review.
 
 ### Why use gatehouse?
 
 | | What you get |
 |---|---|
-| **Questions come to you** | An agent that needs a decision opens an *ask*. It shows as `⚑ 1` in every session's footer and in herdr's sidebar, so you never go pane-hunting. |
-| **"Done" means proven** | A ticket can't move from built to merged to verified until the PR, a passing test run and an independent review are on record. |
-| **Your answer wakes the agent** | You answer, and the asking session gets a one-line note and continues. It never types over you: the note waits until the pane is idle and its input box is empty. |
-| **Work keeps moving around you** | An open ask blocks only the work that depends on it, and every other ticket stays on the ready list. |
-| **No babysitting cost** | The router wakes on the tracker's change feed: no polling, and no model runs in routine operation. |
-| **You can see each session** | Footers show prompt-cache time left, what fills the context, and your heaviest sessions, so you know where the money and the context go. |
+| **One queue for your decisions** | Every question from every agent lands in the needs-you list on herdr's left and as `⚑ N` in every footer. No pane-hunting. |
+| **"Done" means proven** | Tickets can't move from built to merged to verified until the evidence is recorded. |
+| **Your answer wakes the agent** | It gets a one-line note and continues. Nothing ever types over you: the note waits until the pane is idle and its input box is empty. |
+| **Work keeps moving around you** | An open question blocks only the work that depends on it. Everything else carries on. |
+| **Token-efficient by design** | Each job gets the cheapest model that will pass, workers compact early and start fresh between tickets, and timers keep the prompt cache warm. [More below.](#token-efficiency) |
+| **You can see each session** | Footers show cache time left, what fills the context, and which sessions are heaviest. |
 
-### Quick example
+## How you use it
 
-```bash
-# Write a ticket: what happens now, what should happen, how we'll know
-trk new work-item "Fix the flaky login test" --form self-contained --repo ~/src/myapp \
-  --section current-behaviour=@current.md --section desired-behaviour=@desired.md \
-  --criterion "The login test passes 50 runs in a row"
+**1. Open a workspace in herdr for the work.**
 
-# Run it: a herdr Space, a fresh worktree, a Claude Code session that claims the ticket
-hx start tr-abc12
+**2. Bring the work in.** In a Claude Code session in that workspace:
 
-# Later: ⚑ 1 in your footer. See what's waiting, and answer it
-trk waiting
-trk answer tr-ask34 --outcome "Retry, don't raise the timeout" --answer -
-
-# The session resumes. The ticket can't close until its evidence is in
-trk show tr-abc12
+```
+/trk-create-program https://jira.example.com/browse/PROJ-123
 ```
 
-## Design philosophy
+A link to a JIRA or Azure DevOps ticket, or a plain description:
+`/trk-create-program Move billing to the new payments API`. The session reads what it can, asks
+what it can't, and charts the program with you: the problem, a checkable destination, the
+decisions still open, and the projects. It ends by naming the program's id.
 
-1. **Evidence over trust.** An agent saying it's finished is a claim; a passing test tied to a
-   commit is evidence. Gates read the evidence.
-2. **A question is a work item.** Asks live in the tracker, block exactly what depends on them, and
-   have an owner and an answer on record. A question in a chat scrollback has none of that.
-3. **Interrupt the person, never the typing.** Asks reach you; answers reach agents. Nothing is
-   typed into a pane you're using.
-4. **Plumbing, not prompts.** gatehouse works under whatever skills and prompts you already use. It
-   adds no agent persona and no prompt library.
-5. **One set, tested together.** The three tools are pinned to commits that passed together, and
-   you upgrade them as a set.
+**3. Drive it.**
 
-## How it compares
+```
+/trk-drive-program tr-ab12c
+```
 
-| | gatehouse | herdr alone | An issue tracker (GitHub Issues, Linear) |
-|---|---|---|---|
-| Runs many agent sessions side by side | ✅ via herdr | ✅ | ❌ |
-| Work sized for one agent session, with a ready list | ✅ | ❌ | ⚠️ by convention |
-| Gates that need evidence before "done" | ✅ | ❌ | ❌ |
-| Agent questions as tracked, blocking items | ✅ asks | ❌ | ⚠️ as comments |
-| An answer wakes the asking session | ✅ | ❌ | ❌ |
-| Cache and context visible per session | ✅ | ❌ | ❌ |
-| Setup | one installer | one install | a hosted account |
+This session becomes the program's **driver**. It resolves decisions, gets each project specced
+and reviewed, starts a worker session for each ticket in its own worktree, watches them, and keeps
+going until every line of the destination is checked off. It surfaces only what a person must
+decide.
 
-**Use gatehouse when** you run several Claude Code sessions for hours and want to spend your
-attention on decisions, not on checking.
+**4. Answer what reaches you.** When `⚑ 1` appears, run `/needs-me` (or click it) to jump to the
+session that's waiting, and answer it there. Answers can be a word: most questions end with
+numbered options and an exact "Reply with" line.
 
-**It's not the best fit when** you run one session at a time, you don't use herdr, or your team
-needs a shared hosted tracker. trk is one SQLite file per machine.
+That's the whole loop. You never call the tracker or the router yourself: the sessions do.
+
+## What you'll see
+
+<!-- screenshot: docs/images/needs-you.png
+     herdr's left sidebar with the needs-you list: three panes waiting, sorted by urgency.
+     Highlight the list and the top row. -->
+
+<!-- screenshot: docs/images/footer.png
+     One session's footer, cropped tight. Highlight and label each part:
+     cache 42m (cache-timer) · ⚑ 2 (herdr-jump) · heaviest sessions with their cache left
+     (ctx-heavy) · the context bar (ctx-bar) · async (turn-mode). -->
+
+<!-- screenshot: docs/images/driver.png
+     The driver pane mid-cycle: its status of workers and items, next to two worker panes.
+     Highlight the worker names, which match the items they hold. -->
+
+<!-- screenshot: docs/images/ask.png
+     A session ending its turn with a "⚑ Needs you" block: the question, numbered options,
+     "Reply with". Highlight the Reply with line. -->
+
+| Where | What it shows | From |
+|---|---|---|
+| **herdr's left sidebar** | The needs-you list: every pane waiting on you, most urgent first | hx + herdr-jump |
+| **Footer: `cache 42m`** | Time until this session's prompt cache expires | cache-timer |
+| **Footer: `⚑ 2`** | How many sessions are waiting on you. Click to go there | herdr-jump |
+| **Footer: the session list** | Your heaviest sessions anywhere in herdr, each with its cache time left. Click to go | ctx-heavy |
+| **Footer: the bar** | What fills this session's context, colored by source (file reads, shell output, subagents…) | ctx-bar |
+| **Footer: `async`** | How this session ends its turns: with a summary and a clear ask (async), or just stopping (real-time). Click to switch | turn-mode |
+
+## Shortcuts
+
+Type these in any Claude Code session:
+
+| Command | Does |
+|---|---|
+| `/needs-me` | Jump to the next session waiting on you |
+| `/needs-me-list` | The whole needs-you list: pick one, or dismiss one |
+| `/jump` | A picker of every herdr pane; type to filter |
+| `/jump <pane-id \| workspace \| words>` | Straight to a pane (`w8N:p2`), a workspace, or the one whose title matches |
+| `/jump-back` | Back to where you just were |
+| `/ctxbar` | What's filling this context, with the biggest chunks |
+| `/lets-compact <what's next>` | Writes the best `/compact` (or `/clear`) for what you'll do next |
+| `/trk-create-program <link or text>` | Bring work in and chart it |
+| `/trk-drive-program <id>` | Drive a program to done |
+| `/cockpit:implement-with-herdr <spec>` | Build an existing spec's tickets in parallel workers, at the lowest cost |
+| `/vet:map` · `/vet:address` · `/vet:verify` | Review an agent's PR by its decisions, fix what it found, and confirm before merge |
+
+The footer is clickable too: `⚑ N` opens the list, any pane id goes to that pane, and the
+turn-mode label switches modes.
+
+## Token efficiency
+
+Running a fleet is cheap only if every session is. gatehouse builds that in:
+
+- **The cheapest model that will pass first time.** The driver routes each job:
+  - Haiku at low effort for searches, summaries and CI watching.
+  - Sonnet at medium for building an agreed ticket, writing specs and audits.
+  - Opus for framing, design and hard debugging.
+- **Workers compact early.** Workers start with auto-compact at 250k tokens instead of near the
+  1M limit, so each turn re-sends less context.
+- **Fresh workers between tickets.** A worker is cleared, or a new one started, for the next
+  ticket, so nothing carries one ticket's context into the next.
+- **Timers that respect the cache.** The prompt cache lives 60 minutes. The driver's cycles run at
+  50 minutes or less, so they stay warm, or 4 hours or more. A cold cycle re-reads the whole
+  context at full price: about $1.70 at 300k tokens.
+- **Idle when only you block.** When every open path waits on a person, the driver stops its cycle
+  and sets one long fallback, instead of spending tokens on checking.
+- **A guard on expired caches.** cache-timer shows a confirm card before a prompt re-sends an
+  expired cache at full price. It can also write a handoff note just before a big session's cache
+  expires, so you resume from the note instead of re-reading everything.
+- **See where tokens go.** ctx-bar shows what fills a context, and ctx-heavy shows which sessions
+  are heaviest and how long each one's cache has left.
+- **No model in the plumbing.** Routing questions and answers runs no model and never polls.
 
 ## Install
 
@@ -100,8 +166,9 @@ needs a shared hosted tracker. trk is one SQLite file per machine.
 | uv | `uv --version` | `brew install uv`, or [docs.astral.sh/uv](https://docs.astral.sh/uv/) |
 | herdr | `herdr --version` | [herdr.dev](https://herdr.dev) |
 | Claude Code, logged in | `claude --version` | [claude.com/claude-code](https://claude.com/claude-code) |
+| GitHub CLI, logged in, for repos on GitHub | `gh auth status` | `brew install gh`, then `gh auth login`. Workers open PRs and read CI with it |
 
-On a Mac, all at once: `brew install uv python@3.12`, then herdr and Claude Code.
+On a Mac: `brew install uv python@3.12 gh`, then herdr and Claude Code, and `gh auth login`.
 
 **Install:**
 
@@ -112,131 +179,71 @@ cd ~/src/gatehouse
 ./install.sh
 ```
 
-The installer:
-1. clones trk, hx and workbench into `~/src` and checks each out at its commit in
-   [`versions.toml`](versions.toml);
-2. runs each repo's own installer, which puts the `trk` and `hx` commands on your PATH, creates
-   trk's store under your name, installs the skills and hooks Claude Code uses, and starts the hx
-   watcher (systemd on Linux, launchd on macOS);
-3. adds the workbench clone to Claude Code as the `mjfork` plugin marketplace and installs
-   `cockpit`, `ctx-bar`, `cache-timer`, `herdr-jump` and `turn-mode`, pinned like the rest.
+Run it again at any time: each step skips work that's already done. It ends by printing what it
+installed and how to check it.
 
-You can run it again at any time: each step skips work that's already done.
-
-**Check it worked:**
-
-```bash
-trk --version
-hx reconcile --dry-run      # the watcher sees your store and would take no wrong action
-claude plugin list          # the five workbench plugins
-```
-
-Then open a Claude Code session in herdr. Its footer shows the cache timer and a `⚑` count.
+**Check it worked:** restart Claude Code, open a session in herdr, and look for the footer with
+`cache` and `⚑`. Then type `/trk-` to confirm the program commands are there.
 
 **On Windows**, use WSL2 (untested). herdr and the installers are bash and Unix.
 
-## Quick start: your first ticket
+### What gets installed, and where
 
-1. **Describe the work.** Write what happens today and what should happen:
-   ```bash
-   echo "The login test fails about one run in ten." > current.md
-   echo "The login test passes every run." > desired.md
-   ```
-2. **File it** against one of your repos. trk prints the new ticket's id:
-   ```bash
-   trk new work-item "Fix the flaky login test" --form self-contained --repo ~/src/myapp \
-     --section current-behaviour=@current.md --section desired-behaviour=@desired.md \
-     --criterion "The login test passes 50 runs in a row"
-   ```
-3. **Start it:** `hx start <id>`. A herdr Space opens, and a Claude Code session claims the ticket
-   in a fresh worktree.
-4. **Get on with something else.** When the session needs you, `⚑ 1` appears in your footers and
-   the ask shows in herdr's sidebar. Click it and answer.
-5. **Watch it finish.** The session works the ticket through `framed → specd → built → merged →
-   verified`, recording evidence at each gate. hx closes the Space 10 minutes after the ticket
-   closes.
+Everything goes under your home folder. Nothing needs `sudo`.
 
-trk's [quickstart](https://github.com/mjfork/trk#quickstart) goes deeper on gates and evidence,
-and hx's [quickstart](https://github.com/mjfork/hx#quickstart) on asks and Spaces.
+```
+~/src/                                   the clones, checked out at the pins in versions.toml
+├── gatehouse/                           this repo
+├── trk/                                 the tracker ┐ keep these: Claude Code's hooks
+├── hx/                                  the router  ┘ run scripts from them
+└── workbench/                           the plugins (Claude Code installs from here)
 
-## Commands
+~/.local/bin/
+├── trk, hx                              commands, installed by uv (the sessions use them)
+└── claude-worker                        how worker sessions start: Claude Code with early
+                                         auto-compact (Linux also gets launch-guard.sh)
+~/.local/share/uv/tools/{trk,hx}/        their Python environments, managed by uv
 
-### `install.sh`
+~/.claude/
+├── skills/trk, trk-create-program,
+│   trk-drive-program, hx-work           what teaches sessions the tracker and the program loop
+├── settings.json                        hooks added: SessionStart, UserPromptSubmit and
+│                                        PostToolUse (keep claims alive, warn on a stale
+│                                        checkout); Linux also gets a memory guard on Bash
+└── plugins/                             the mjfork marketplace (→ ~/src/workbench) and cockpit,
+                                         ctx-bar, cache-timer, herdr-jump, turn-mode
+
+~/.config/hx/config.toml                 the router's settings (a starter, only if none exists)
+~/.config/herdr/config.toml              three keys changed so herdr shows the needs-you list,
+                                         with a config.toml.bak-hx-* backup beside it (skip with
+                                         ./install.sh -- --no-sidebar); the hx herdr plugin is
+                                         linked
+~/Library/LaunchAgents/com.hx.watch.plist   the router's background service on macOS
+~/.config/systemd/user/hx.service           …or on Linux
+
+~/.local/share/trk/                      your data: the tracker's SQLite store
+~/.local/state/hx/                       the router's inbox, logs and hold file
+~/.herdr-queue/, ~/.claude/ctx/          the plugins' small state files
+```
+
+Replaced skills and scripts are backed up to `~/.local/share/{trk,hx}-skill-backups/`. The one
+background process is the router service, which uses no model and doesn't poll.
+`./install.sh --uninstall` removes all of this except your data, your config and the clones, and
+prints the two commands that remove the plugins.
+
+### Installer options
 
 | Option | Does |
 |---|---|
 | `--dry-run` | Print every step and change nothing |
 | `--src DIR` | Where the repos go (default `~/src`) |
-| `--me NAME` | Your name in trk and hx, for a new store (default: your user name) |
-| `--no-hx` | trk only; no herdr needed |
+| `--me NAME` | Your name in the tracker and router, for a new store (default: your user name) |
+| `--no-hx` | The tracker only; no herdr needed |
 | `--no-plugins` | Leave Claude Code's plugins alone |
-| `--plugins LIST` | Choose the workbench plugins, e.g. `--plugins cache-timer,herdr-jump` |
+| `--plugins LIST` | Choose the plugins, e.g. `--plugins cache-timer,herdr-jump` |
 | `--force` | Replace installed skills that differ from the pinned copy (old copies are backed up) |
-| `--uninstall` | Run each repo's uninstaller; your clones and data stay |
-| `-- <args>` | Pass options to hx's installer, e.g. `./install.sh -- --no-sidebar` |
-
-### The everyday commands
-
-| Command | Does |
-|---|---|
-| `trk ready` | What can be started now |
-| `trk tree` | Your programs, projects and tickets |
-| `trk waiting` | Asks waiting on you, most urgent first |
-| `trk answer <ask> --outcome "…" --answer -` | Answer an ask (the details come from stdin) |
-| `trk show <id>` | An item, its stage, evidence and asks |
-| `hx start <id>` | Run a ticket in its own herdr Space |
-| `/jump`, `/needs-me` | In Claude Code: go to any pane, or to the next one waiting on you |
-| `/cockpit:implement-with-herdr <spec>` | Fan a spec's tickets across parallel sessions |
-| `/vet:map` | Review an agent's PR by its decisions before you merge |
-
-Every trk and hx command takes `--help`.
-
-## Configuration
-
-[`versions.toml`](versions.toml) is the one file gatehouse reads:
-
-```toml
-[trk]
-repo = "https://github.com/mjfork/trk"
-commit = "…"              # the full hash; every repo is checked out at its pin
-
-[workbench]
-repo = "https://github.com/mjfork/workbench"
-commit = "…"
-marketplace = "mjfork"    # the name the plugins install under
-plugins = ["cockpit", "ctx-bar", "cache-timer", "herdr-jump", "turn-mode"]
-```
-
-Each tool keeps its own settings: trk's store is `~/.local/share/trk`, hx's config is
-`~/.config/hx`, and the plugins have settings in Claude Code. See each repo's README.
-
-## Architecture
-
-```
-            ┌──────────── you ────────────┐
-            │ herdr sidebar · footer ⚑ ·  │
-            │ terminal                    │
-            └──────▲───────────────┬──────┘
-          asks     │               │ answers
-                   │               ▼
- ┌────────┐ change feed + JSON ┌────────┐  herdr CLI   ┌──────────────────────────┐
- │  trk   │◀──────────────────▶│   hx   │─────────────▶│ herdr: Spaces and panes  │
- │ work,  │                    │ router │  wakes panes │ running Claude Code      │
- │ gates, │◀───── trk CLI ─────┤        │              │ sessions with workbench  │
- │ asks   │  (sessions claim,  └───┬────┘              │ plugins in their footers │
- └────────┘   record evidence,     │ needs-you queue   └──────────────────────────┘
-              open asks)           ▼
-                            workbench herdr-jump (⚑ N)
-```
-
-| Part | What it does |
-|---|---|
-| [trk](https://github.com/mjfork/trk) | The tracker: programs, specs, tickets, claims, stage gates, asks and evidence. A CLI over one SQLite file per machine, with an append-only journal. |
-| [hx](https://github.com/mjfork/hx) | The router: a background watcher that delivers asks and wakes askers. `hx start` runs a ticket in its own Space. |
-| [workbench](https://github.com/mjfork/workbench) | Claude Code plugins: the footer instruments, the parallel-agent workflows, and `vet`. |
-
-[docs/how-it-fits.md](docs/how-it-fits.md) covers what each part reads and writes, and the written
-contracts between them.
+| `--uninstall` | Remove what was installed; your clones, data and config stay |
+| `-- <args>` | Pass options to the router's installer, e.g. `-- --no-sidebar` |
 
 ## Updating
 
@@ -244,8 +251,70 @@ contracts between them.
 cd ~/src/gatehouse && git pull && ./install.sh
 ```
 
-trk and hx are installed as copies, so a `git pull` inside `~/src/trk` changes nothing until you
-rerun the installer. That way, the set you run is always one that was tested together.
+The tools are installed as copies, so they change only when you rerun the installer. That way,
+the set you run is always one that was tested together.
+
+## Design philosophy
+
+1. **Evidence over trust.** An agent saying it's finished is a claim; a passing test tied to a
+   commit is evidence. Gates read the evidence.
+2. **A question is a work item.** Questions live in the tracker, block exactly what depends on
+   them, and have an owner and an answer on record. A question in a chat scrollback has none of
+   that.
+3. **Interrupt the person, never the typing.** Questions reach you, and answers reach agents.
+   Nothing is typed into a pane you're using.
+4. **Spend tokens on work, not on watching.** Cheapest model per job, early compaction, a warm
+   cache, and no model in the plumbing.
+5. **Plumbing, not prompts.** gatehouse works under whatever skills and prompts you already use.
+6. **One set, tested together.** The tools are pinned to commits that passed together, and you
+   upgrade them as a set.
+
+## How it compares
+
+| | gatehouse | herdr alone | An issue tracker (GitHub Issues, Linear) |
+|---|---|---|---|
+| Runs many agent sessions side by side | ✅ via herdr | ✅ | ❌ |
+| Breaks outside work into a dependency tree agents can work | ✅ | ❌ | ⚠️ by hand |
+| Starts and manages the worker sessions | ✅ the driver | ❌ | ❌ |
+| Gates that need evidence before "done" | ✅ | ❌ | ❌ |
+| Agent questions as tracked, blocking items | ✅ | ❌ | ⚠️ as comments |
+| An answer wakes the asking session | ✅ | ❌ | ❌ |
+| Model routing, early compaction and cache-aware timers | ✅ | ❌ | ❌ |
+| Setup | one installer | one install | a hosted account |
+
+**Use gatehouse when** you have more work than one session can carry, and you want to spend your
+attention on decisions, not on supervision.
+
+**It's not the best fit when** you run one session at a time, you don't use herdr, or your team
+needs a shared hosted tracker (the tracker is one SQLite file per machine).
+
+## Architecture
+
+```
+            ┌──────────── you ────────────┐
+            │ needs-you list · footer ⚑ · │
+            │ the session that's asking   │
+            └──────▲───────────────┬──────┘
+         questions │               │ answers
+                   │               ▼
+ ┌────────┐ change feed + JSON ┌────────┐  herdr CLI   ┌──────────────────────────┐
+ │  trk   │◀──────────────────▶│   hx   │─────────────▶│ herdr: workspaces, panes │
+ │ work,  │                    │ router │  wakes panes │ driver + worker sessions │
+ │ gates, │◀───── trk CLI ─────┤        │              │ with the workbench       │
+ │ asks   │  (sessions claim,  └───┬────┘              │ plugins in their footers │
+ └────────┘   record evidence,     │ needs-you queue   └──────────────────────────┘
+              ask questions)       ▼
+                            workbench herdr-jump (⚑ N)
+```
+
+| Part | What it does | You use it through |
+|---|---|---|
+| [trk](https://github.com/mjfork/trk) | The tracker: programs, specs, tickets, claims, stage gates, questions and evidence, in one SQLite file per machine with an append-only journal | the `/trk-…` commands; sessions run the CLI |
+| [hx](https://github.com/mjfork/hx) | The router: a background service that delivers questions and wakes the sessions that asked | nothing; it runs on its own |
+| [workbench](https://github.com/mjfork/workbench) | Claude Code plugins: the footer, the shortcuts, the parallel-build workflow and `vet` | the footer and the `/` commands |
+
+[docs/how-it-fits.md](docs/how-it-fits.md) covers what each part reads and writes, and the written
+contracts between them.
 
 ## Troubleshooting
 
@@ -254,8 +323,7 @@ macOS's `python3` is 3.9. Run `brew install python@3.12`, open a new shell, and 
 again. A Python that only uv manages doesn't count: the installers look on your PATH.
 
 ### `herdr is required` / `claude is required`
-Install it and make sure it's on your PATH. For the tracker alone, without herdr, run
-`./install.sh --no-hx --no-plugins`.
+Install it and make sure it's on your PATH.
 
 ### `… Nothing was changed. Run again with --force …`
 Your installed skills differ from the new pinned copies. After an update this is normal: the older
@@ -266,63 +334,68 @@ The old copies are backed up either way.
 The installer won't overwrite your edits in a clone. Commit or stash them, or install to a fresh
 folder with `--src DIR`.
 
-### `hx: command not found` or `trk: command not found`
-uv's tool folder isn't on your PATH. Run `uv tool update-shell` and open a new shell.
+### `/trk-create-program` doesn't appear, or there's no footer
+Restart Claude Code so it loads the new skills and plugins, and check that `claude plugin list`
+shows the five plugins.
 
-### Asks don't show up
-Check the watcher is running:
-- **Linux:** `systemctl --user status hx`
+### Sessions report `trk: command not found`
+uv's tool folder isn't on your PATH. Run `uv tool update-shell`, open a new shell, and restart the
+sessions.
+
+### Questions don't reach the needs-you list
+Check the router's service is running:
 - **macOS:** `launchctl print gui/$(id -u)/com.hx.watch`
+- **Linux:** `systemctl --user status hx`
 
-Then look at `~/.local/state/hx/watch.log`. Restart it with `systemctl --user restart hx`, or on
-macOS `launchctl kickstart -k gui/$(id -u)/com.hx.watch`.
+Its log is `~/.local/state/hx/watch.log`. Restart it with
+`launchctl kickstart -k gui/$(id -u)/com.hx.watch` on macOS, or `systemctl --user restart hx` on
+Linux.
 
 ### The plugins follow GitHub, not the pin
 You already had an `mjfork` marketplace from another source, and the installer left it alone. To
-pin it, remove it with `claude plugin marketplace remove mjfork` and run the installer again.
+pin it, run `claude plugin marketplace remove mjfork`, then the installer again.
 
 ## Limitations
 
-- **One machine.** trk keeps one store per machine. There's no shared server, and no team view of
-  the same tickets.
-- **herdr is required** for routing asks, Spaces and most footer instruments. Without herdr you
-  get the tracker alone.
-- **Claude Code only.** The sessions, skills, hooks and plugins are built for Claude Code. Other
-  agents can drive trk from its CLI, but nothing routes their asks.
+- **One machine.** The tracker keeps one store per machine. There's no shared server, and no team
+  view of the same tickets.
+- **herdr is required** for the fleet, the needs-you list and most of the footer.
+- **Claude Code only.** The sessions, skills, hooks and plugins are built for Claude Code.
+- **It reads upstream tickets; it doesn't write back to them.** `/trk-create-program` takes a JIRA
+  or Azure DevOps link as input, through whatever access your session has. Status doesn't sync
+  back.
 - **Windows is untested.** Use WSL2.
-- **`hx` shares its name with the Helix editor's `hx` command.** If you use Helix, put one of them
-  first on your PATH or alias the other.
+- **The router's `hx` command shares its name with the Helix editor's `hx`.** You never type it,
+  but if you use Helix, check which one comes first on your PATH.
 
 ## FAQ
 
 ### Do I have to change my skills or prompts?
-No. trk's skills teach agents the tracker, and everything else you use stays as it is.
+No. The tracker's skills teach sessions the program loop, and everything else you use stays as it
+is.
 
-### Does it cost tokens to run?
-Routine routing runs no model: the watcher wakes on trk's change feed, and footers read local
-state. Only your Claude Code sessions use tokens, as they already do.
+### Does it cost tokens when nothing is happening?
+The plumbing runs no model. When only you are blocking, the driver idles on one long fallback
+timer instead of cycling.
 
 ### Where does my data live?
-On your machine. trk's store is a SQLite file in `~/.local/share/trk`, and nothing is sent anywhere.
-Back it up with `trk backup`.
+On your machine, in `~/.local/share/trk`. Nothing is sent anywhere.
 
-### Can I use just one part?
-Yes. trk works alone (`./install.sh --no-hx --no-plugins`), and workbench's `cache-timer` and
-`vet` work without herdr. Each repo has its own install.
+### What happens to a worker that dies mid-ticket?
+Its claim is a lease. When the session stops renewing it, the lease lapses, and the driver gives
+the ticket to a new worker.
 
-### What happens to an agent that dies mid-ticket?
-Its claim is a lease. When the session stops renewing it, the lease lapses and the ticket goes back
-on the ready list for another session.
+### How many workers run at once?
+As many as the program's charter allows. The driver keeps that many busy and puts the critical
+path first.
 
-### How far does it scale?
-That's up to you, since gatehouse is plumbing. A pattern that works well on top of it: a top-level
-agent drives one driver session per program, each driver hands tickets to worker sessions,
-independent auditors review what workers built, and you answer asks from the top. Nothing requires
-this shape, and none of it is built in.
+### Can I run more than one program?
+Yes: one workspace and one driver per program. A pattern that scales well is one top-level
+session over several drivers, with you answering from the top. Nothing requires this shape.
 
 ### How do I uninstall?
-Run `./install.sh --uninstall`. Your clones, trk's store and your config stay. It prints the
-commands that remove the plugins.
+Run `./install.sh --uninstall`. Your clones, data and config stay. It prints the commands that
+remove the plugins.
 
 ## About contributions
 

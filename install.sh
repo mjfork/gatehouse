@@ -91,6 +91,16 @@ if [ "$UNINSTALL" != 1 ] && ! has_python312; then
   die "python 3.12 or newer is required by trk and hx; $hint"
 fi
 
+# The program skills and vet use the GitHub CLI for repos on GitHub; a repo elsewhere (Azure DevOps)
+# doesn't need it, so this only warns.
+if [ "$UNINSTALL" != 1 ]; then
+  if ! command -v gh >/dev/null; then
+    say "note: the GitHub CLI (gh) is not installed; for repos on GitHub install it and run: gh auth login"
+  elif ! gh auth status >/dev/null 2>&1; then
+    say "note: the GitHub CLI is not logged in; for repos on GitHub run: gh auth login"
+  fi
+fi
+
 url_of() { if [ -n "${GATEHOUSE_REPO_BASE:-}" ]; then echo "$GATEHOUSE_REPO_BASE/$1"; else pin "$1" repo; fi; }
 
 # Clone the repo, or fetch it from the pinned URL (not the clone's own origin, which may be an old
@@ -201,5 +211,5 @@ Check it worked:
 $([ "$HX" = 1 ] && echo "  hx reconcile --dry-run")
 $([ "$PLUGINS_ON" = 1 ] && echo "  claude plugin list")
 
-Then write your first ticket: see "Quick start" in $HERE/README.md
+What went where: "What gets installed, and where" in $HERE/README.md
 EOF

@@ -11,7 +11,7 @@ setup() {
   export HOME="$T/home" LOG="$T/log"
   mkdir -p "$HOME" "$T/bin" "$T/repos"
   : >"$LOG"
-  for bin in herdr uv; do printf '#!/bin/sh\nexit 0\n' >"$T/bin/$bin"; done
+  for bin in herdr uv gh; do printf '#!/bin/sh\nexit 0\n' >"$T/bin/$bin"; done
   cat >"$T/bin/claude" <<'EOF'
 #!/bin/sh
 echo "claude $*" >>"$LOG"
@@ -199,6 +199,19 @@ t_a_finished_run_says_what_it_installed_and_how_to_check() {
   check "summary: checks" grep -q "claude plugin list" <<<"$out"
   out=$("$T/gh/install.sh" --dry-run 2>&1)
   check "summary: a dry run says nothing changed" grep -q "dry run: nothing was changed" <<<"$out"
+  teardown
+}
+
+t_a_missing_or_logged_out_gh_only_warns() {
+  setup; rm "$T/bin/gh"; mkdir "$T/py"; for c in python3 python3.14 python3.13 python3.12; do
+    command -v "$c" >/dev/null && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 12))' && { ln -s "$(command -v "$c")" "$T/py/python3"; break; }
+  done
+  out=$(PATH="$T/bin:$T/py:/usr/bin:/bin" "$T/gh/install.sh" --no-plugins 2>&1); code=$?
+  check "no gh: still installs" test "$code" = 0
+  check "no gh: says so" grep -q "gh auth login" <<<"$out"
+  printf '#!/bin/sh\nexit 1\n' >"$T/bin/gh"; chmod +x "$T/bin/gh"
+  out=$("$T/gh/install.sh" --no-plugins 2>&1)
+  check "logged out: says so" grep -q "not logged in" <<<"$out"
   teardown
 }
 
