@@ -306,8 +306,9 @@ Everything goes under your home folder. Nothing needs `sudo`.
 
 Replaced skills and scripts are backed up to `~/.local/share/{trk,hx}-skill-backups/`. The one
 background process is the router service, which uses no model and doesn't poll.
-`install.sh --uninstall` removes all of this except your data, your config and the clones. It
-prints the commands that remove the plugins and the clones (`rm -rf ~/.local/share/gatehouse`).
+`install.sh --uninstall` removes the commands, skills, hooks and the router service. It keeps your
+data, your config, the clones, the plugins and the install logs, and prints the commands that
+remove the plugins and the clones (`rm -rf ~/.local/share/gatehouse`).
 
 ### Optional: the status line
 
