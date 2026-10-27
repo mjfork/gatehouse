@@ -1,0 +1,18 @@
+# One set of commits known to work together. gatehouse/install.sh checks each repo out at its
+# commit; bump them together, after the set has passed its tests on Linux and macOS.
+
+[trk]
+repo = "https://github.com/mjfork/trk"
+commit = "671c4507c88c76505fc615520c43a2a386c8ff9b"
+
+[hx]
+repo = "https://github.com/mjfork/hx"
+commit = "175e440a8c7341eeb9e1161ae160e7608ce5ae94"
+
+[workbench]
+# Claude Code plugins, installed from the marketplace (it follows GitHub; the commit is the one
+# this set was tested with).
+repo = "https://github.com/mjfork/workbench"
+commit = "7d66451119f5c9c95cd6d3a13598f211c559079e"
+marketplace = "mjfork"
+plugins = ["cockpit", "ctx-bar", "cache-timer", "herdr-jump", "turn-mode"]
