@@ -108,6 +108,17 @@ t_piped_from_curl_it_clones_gatehouse_and_runs_from_there() {
   teardown
 }
 
+t_a_piped_dry_run_or_force_reaches_the_options_and_a_dry_run_leaves_nothing() {
+  setup; out=$(cd "$T" && bash -s -- --dry-run <"$T/gh/install.sh" 2>&1); code=$?
+  check "piped dry run: succeeds" test "$code" = 0
+  check "piped dry run: previews" says "dry run: nothing was changed"
+  check "piped dry run: no gatehouse clone left" test ! -e "$SRC"
+  out=$(cd "$T" && bash -s -- --no-plugins <"$T/gh/install.sh" 2>&1); : >"$TEST_LOG"
+  out=$(cd "$T" && bash -s -- --force --no-plugins <"$T/gh/install.sh" 2>&1)
+  check "piped --force: reaches the tools" logged "trk install.sh --force"
+  teardown
+}
+
 t_a_rerun_skips_tools_already_at_their_pins() {
   setup; fake_tool trk; fake_tool hx
   "$T/gh/install.sh" --no-plugins >/dev/null 2>&1; : >"$TEST_LOG"

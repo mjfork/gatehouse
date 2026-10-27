@@ -136,6 +136,16 @@ banner() {
 SELF=${BASH_SOURCE[0]:-}
 if [ -z "$SELF" ] || [ ! -f "$(dirname "$SELF")/versions.toml" ]; then
   command -v git >/dev/null 2>&1 || die "git is required: gatehouse clones its tools with it"
+  if [ "$DRY" = 1 ]; then
+    # A preview changes nothing, so this clone goes in a temporary folder that is removed after.
+    preview=$(mktemp -d)
+    info "Cloning gatehouse into a temporary folder for the preview"
+    git clone -q "$GATEHOUSE_URL" "$preview/gatehouse" || { rm -rf "$preview"; die "could not clone $GATEHOUSE_URL"; }
+    code=0
+    bash "$preview/gatehouse/install.sh" ${ORIGINAL_ARGS[@]+"${ORIGINAL_ARGS[@]}"} || code=$?
+    rm -rf "$preview"
+    exit "$code"
+  fi
   home="$SRC/gatehouse"
   if [ -d "$home/.git" ]; then
     [ -z "$(git -C "$home" status --porcelain)" ] || die "$home has local changes; commit or stash them first"

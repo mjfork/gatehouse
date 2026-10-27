@@ -8,7 +8,7 @@
 decisions that need you.**
 
 ```bash
-git clone https://github.com/mjfork/gatehouse ~/src/gatehouse && ~/src/gatehouse/install.sh
+curl -fsSL "https://raw.githubusercontent.com/mjfork/gatehouse/main/install.sh?$(date +%s)" | bash
 ```
 
 Linux and macOS · needs [herdr](https://herdr.dev), [Claude Code](https://claude.com/claude-code),
@@ -232,17 +232,34 @@ On a Mac: `brew install uv python@3.12 gh`, then herdr and Claude Code, and `gh 
 **Install:**
 
 ```bash
-git clone https://github.com/mjfork/gatehouse ~/src/gatehouse
-cd ~/src/gatehouse
-./install.sh --dry-run      # shows every step and changes nothing
-./install.sh
+curl -fsSL "https://raw.githubusercontent.com/mjfork/gatehouse/main/install.sh?$(date +%s)" | bash
 ```
 
-Run it again at any time: each step skips work that's already done. It ends by printing what it
-installed and how to check it.
+To see every step first without changing anything, add `-s -- --dry-run` after `bash`. The
+installer clones itself into `~/.local/share/gatehouse/gatehouse` and runs from there. If you'd
+rather read it before running it:
 
-**Check it worked:** restart Claude Code, open a session in herdr, and look for the footer with
-`cache` and `⚑`. Then type `/trk-` to confirm the program commands are there.
+```bash
+git clone https://github.com/mjfork/gatehouse ~/.local/share/gatehouse/gatehouse
+~/.local/share/gatehouse/gatehouse/install.sh --dry-run
+~/.local/share/gatehouse/gatehouse/install.sh
+```
+
+It ends with a summary box: each part as installed, updated, current or skipped, then what to do
+next, where the clones and the log are, and how to uninstall. You can run it again at any time,
+and it skips anything already at its pin. If `~/.local/bin` isn't on your PATH, add `--easy-mode`
+and it adds it to `~/.zshrc` and `~/.bashrc` for you.
+
+**Check it worked:**
+
+```bash
+~/.local/share/gatehouse/gatehouse/install.sh --verify
+```
+
+This checks Python, trk and hx at their pins, herdr, the background service, the plugins, `gh`, and
+your PATH, and changes nothing. If you need help, paste its output. Then restart Claude Code, open
+a session in herdr, and look for the footer with `cache` and `⚑`. Type `/trk-` to see the program
+commands.
 
 **On Windows**, use WSL2 (untested). herdr and the installers are bash and Unix.
 
@@ -251,8 +268,8 @@ installed and how to check it.
 Everything goes under your home folder. Nothing needs `sudo`.
 
 ```
-~/src/                                   the clones, checked out at the pins in versions.toml
-├── gatehouse/                           this repo
+~/.local/share/gatehouse/                the clones, checked out at the pins in versions.toml
+├── gatehouse/                           this repo, and the installer
 ├── trk/                                 the tracker ┐ keep these: Claude Code's hooks
 ├── hx/                                  the router  ┘ run scripts from them
 └── workbench/                           the plugins (Claude Code installs from here)
@@ -269,26 +286,28 @@ Everything goes under your home folder. Nothing needs `sudo`.
 ├── settings.json                        hooks added: SessionStart, UserPromptSubmit and
 │                                        PostToolUse (keep claims alive, warn on a stale
 │                                        checkout); Linux also gets a memory guard on Bash
-└── plugins/                             the mjfork marketplace (→ ~/src/workbench) and cockpit,
+└── plugins/                             the mjfork marketplace (→ the workbench clone) and cockpit,
                                          ctx-bar, cache-timer, herdr-jump, turn-mode
 
 ~/.config/hx/config.toml                 the router's settings (a starter, only if none exists)
 ~/.config/herdr/config.toml              three keys changed so herdr shows the needs-you list,
                                          with a config.toml.bak-hx-* backup beside it (skip with
-                                         ./install.sh -- --no-sidebar); the hx herdr plugin is
+                                         install.sh -- --no-sidebar); the hx herdr plugin is
                                          linked
 ~/Library/LaunchAgents/com.hx.watch.plist   the router's background service on macOS
 ~/.config/systemd/user/hx.service           …or on Linux
 
 ~/.local/share/trk/                      your data: the tracker's SQLite store
 ~/.local/state/hx/                       the router's inbox, logs and hold file
+~/.local/state/gatehouse/                installed (the commit each part is at), install.lock,
+                                         and install-<time>.log for every run
 ~/.herdr-queue/, ~/.claude/ctx/          the plugins' small state files
 ```
 
 Replaced skills and scripts are backed up to `~/.local/share/{trk,hx}-skill-backups/`. The one
 background process is the router service, which uses no model and doesn't poll.
-`./install.sh --uninstall` removes all of this except your data, your config and the clones, and
-prints the two commands that remove the plugins.
+`install.sh --uninstall` removes all of this except your data, your config and the clones. It
+prints the commands that remove the plugins and the clones (`rm -rf ~/.local/share/gatehouse`).
 
 ### Optional: the status line
 
@@ -306,7 +325,7 @@ It's a plain script, not a plugin, so the installer leaves it alone. To use it (
 on a Mac, `brew install jq`):
 
 ```bash
-cp ~/src/workbench/statusline/statusline.sh ~/.claude/statusline.sh
+cp ~/.local/share/gatehouse/workbench/statusline/statusline.sh ~/.claude/statusline.sh
 ```
 
 Then add this to `~/.claude/settings.json`:
@@ -323,23 +342,35 @@ Set `STATUSLINE_TZ` (for example `America/Chicago`) to pin the time zone. To rem
 | Option | Does |
 |---|---|
 | `--dry-run` | Print every step and change nothing |
-| `--src DIR` | Where the repos go (default `~/src`) |
+| `--verify` | Check an existing install and change nothing; paste its output when asking for help |
+| `--src DIR` | Where the clones go (default `~/.local/share/gatehouse`) |
 | `--me NAME` | Your name in the tracker and router, for a new store (default: your user name) |
 | `--no-hx` | The tracker only; no herdr needed |
 | `--no-plugins` | Leave Claude Code's plugins alone |
 | `--plugins LIST` | Choose the plugins, e.g. `--plugins cache-timer,herdr-jump` |
-| `--force` | Replace installed skills that differ from the pinned copy (old copies are backed up) |
+| `--force` | Reinstall everything, and replace installed skills that differ from the pinned copy (old copies are backed up) |
+| `--easy-mode` | Add `~/.local/bin` to PATH in `~/.zshrc` and `~/.bashrc` if it's missing |
 | `--uninstall` | Remove what was installed; your clones, data and config stay |
+| `--verbose` | Show each tool installer's own output (it always goes to the log) |
+| `--quiet` | Print errors only |
+| `--no-gum` | Plain output, even when [gum](https://github.com/charmbracelet/gum) is installed |
 | `-- <args>` | Pass options to the router's installer, e.g. `-- --no-sidebar` |
 
 ## Updating
 
+Run the install one-liner again:
+
 ```bash
-cd ~/src/gatehouse && git pull && ./install.sh
+curl -fsSL "https://raw.githubusercontent.com/mjfork/gatehouse/main/install.sh?$(date +%s)" | bash
 ```
 
-The tools are installed as copies, so they change only when you rerun the installer. That way,
-the set you run is always one that was tested together.
+It fetches the newest gatehouse, updates whatever has a new pin, and skips the rest. The tools are
+installed as copies, so they change only when you rerun the installer. That way, the set you run
+is always one that was tested together.
+
+If an update changes skills, the run may stop with "Nothing was changed", because your older
+installed copy counts as different. If you didn't edit those skills yourself, rerun with
+`-s -- --force` after `bash`. The old copies are backed up either way.
 
 ## Design philosophy
 
@@ -414,12 +445,23 @@ Install it and make sure it's on your PATH.
 
 ### `… Nothing was changed. Run again with --force …`
 Your installed skills differ from the new pinned copies. After an update this is normal: the older
-installed copy counts as different. If you didn't edit those skills, run `./install.sh --force`.
+installed copy counts as different. If you didn't edit those skills, rerun the one-liner with `-s -- --force` after `bash`.
 The old copies are backed up either way.
 
-### `~/src/trk has local changes; commit or stash them first`
-The installer won't overwrite your edits in a clone. Commit or stash them, or install to a fresh
-folder with `--src DIR`.
+### `… has local changes; commit or stash them first`
+The installer won't overwrite edits in one of its clones under `~/.local/share/gatehouse`. Commit or
+stash them, or install to a fresh folder with `--src DIR`.
+
+### `another gatehouse install is running`
+Two installs can't run at once. Wait for the other one to finish. A lock left by a run that died is
+taken over automatically.
+
+### `this script needs bash`
+Pipe the one-liner to `bash`, not `sh`.
+
+### Something else failed
+Every run writes a log to `~/.local/state/gatehouse/install-<time>.log`, and a failure prints its
+last 25 lines and the path. Run `install.sh --verify` too, and send both when you ask for help.
 
 ### `/trk-create-program` doesn't appear, or there's no footer
 Restart Claude Code so it loads the new skills and plugins, and check that `claude plugin list`
@@ -481,8 +523,8 @@ Yes: one workspace and one driver per program. A pattern that scales well is one
 session over several drivers, with you answering from the top. Nothing requires this shape.
 
 ### How do I uninstall?
-Run `./install.sh --uninstall`. Your clones, data and config stay. It prints the commands that
-remove the plugins.
+Run `~/.local/share/gatehouse/gatehouse/install.sh --uninstall`. Your clones, data and config stay.
+It prints the commands that remove the plugins and the clones.
 
 ## About contributions
 
