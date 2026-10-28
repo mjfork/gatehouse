@@ -44,6 +44,9 @@ Run it again to update: it skips what is already at its pin.
 
   --src DIR         where the clones go (default: ~/.local/share/gatehouse)
   --me NAME         your name in trk and hx, for a new store and config (default: your user name)
+  --queue-only      just the needs-you queue: the workbench plugins in herdr, without trk or hx.
+                    Later runs stay at this level until you pass --full
+  --full            the whole thing: trk, hx and the plugins (the default)
   --no-hx           install trk only (hx needs herdr)
   --no-plugins      leave Claude Code's plugins alone
   --plugins LIST    comma-separated workbench plugins (default: the list in versions.toml)
@@ -62,13 +65,15 @@ Options after \`--\` go to hx's installer, e.g. \`install.sh -- --no-sidebar\`.
 EOF
 }
 
-ME="" HX=1 PLUGINS_ON=1 PLUGINS="" FORCE=0 EASY=0 VERIFY=0 DRY=0 UNINSTALL=0 VERBOSE=0 QUIET=0 NO_GUM=0
+LEVEL="" TRK=1 ME="" HX=1 PLUGINS_ON=1 PLUGINS="" FORCE=0 EASY=0 VERIFY=0 DRY=0 UNINSTALL=0 VERBOSE=0 QUIET=0 NO_GUM=0
 HX_ARGS=()
 need_value() { [ $# -ge 2 ] && [ -n "$2" ] || { echo "install.sh: $1 needs a value (see --help)" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --src) need_value "$@"; SRC=$2; shift ;;
     --me) need_value "$@"; ME=$2; shift ;;
+    --queue-only) LEVEL=queue ;;
+    --full) LEVEL=full ;;
     --no-hx) HX=0 ;;
     --no-plugins) PLUGINS_ON=0 ;;
     --plugins) need_value "$@"; PLUGINS=$2; shift ;;
@@ -187,6 +192,22 @@ MARKET=$(pin workbench marketplace)
 IFS=, read -r -a WANTED <<<"${PLUGINS:-$(pin workbench plugins)}"
 RECORD="$STATE_HOME/gatehouse/installed"   # name=commit, for each tool this installer put in place
 
+# The level: "queue" (herdr and the workbench plugins only) or "full" (trk and hx too). A run with
+# neither --queue-only nor --full keeps the level of the last install, so an update never adds
+# trk and hx to a queue-only box by surprise.
+LEVEL_FILE="$STATE_HOME/gatehouse/level"
+if [ -z "$LEVEL" ]; then
+  LEVEL=$(cat "$LEVEL_FILE" 2>/dev/null || true)
+  [ "$LEVEL" = queue ] || LEVEL=full
+fi
+if [ "$LEVEL" = queue ]; then
+  TRK=0 HX=0
+  if [ "$PLUGINS_ON" = 0 ]; then echo "install.sh: --queue-only is the plugins, so it can't take --no-plugins" >&2; exit 2; fi
+  if [ "$UNINSTALL" = 0 ] && [ -s "$RECORD" ]; then
+    echo "install.sh: trk and hx are installed here; to step down to the queue alone, run --uninstall first" >&2; exit 2
+  fi
+fi
+
 # ═══ Platform and preflight ═══════════════════════════════════════════════════
 
 OS=$(uname -s)
@@ -210,10 +231,11 @@ has_python312() {
 preflight() {
   need git "gatehouse clones its tools with it"
   need python3 "it reads versions.toml"
-  need uv "trk and hx install with it (https://docs.astral.sh/uv/)"
+  [ "$TRK" = 1 ] && need uv "trk and hx install with it (https://docs.astral.sh/uv/)"
   [ "$HX" = 1 ] && need herdr "hx opens Spaces and wakes panes in herdr; use --no-hx for trk alone"
+  [ "$TRK" = 0 ] && need herdr "the needs-you queue lives in herdr"
   [ "$PLUGINS_ON" = 1 ] && need claude "the workbench plugins install into Claude Code; use --no-plugins to skip"
-  if ! has_python312; then
+  if [ "$TRK" = 1 ] && ! has_python312; then
     local hint="install one and put it on PATH"
     [ "$OS" = Darwin ] && hint="macOS's own python3 is $(python3 -c 'import platform; print(platform.python_version())' 2>/dev/null); run: brew install python@3.12"
     die "python 3.12 or newer is required by trk and hx; $hint"
@@ -228,12 +250,15 @@ preflight() {
   [ -w "$parent" ] || die "no write permission in $parent; choose another place with --src"
 
   # The network. git takes a proxy from HTTPS_PROXY by itself.
+  local probe=trk
+  [ "$TRK" = 0 ] && probe=workbench
   if [ -z "${GATEHOUSE_REPO_BASE:-}" ] &&
-     ! GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=10 ls-remote -q "$(pin trk repo)" HEAD >/dev/null 2>&1; then
-    warn "cannot reach $(pin trk repo); cloning will fail unless the clones are already here"
+     ! GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=10 ls-remote -q "$(pin "$probe" repo)" HEAD >/dev/null 2>&1; then
+    warn "cannot reach $(pin "$probe" repo); cloning will fail unless the clones are already here"
   fi
 
   # The GitHub CLI: the program skills and vet use it for repos on GitHub. Azure DevOps repos don't.
+  if [ "$TRK" = 0 ]; then return 0; fi
   if ! command -v gh >/dev/null 2>&1; then
     warn "the GitHub CLI (gh) is not installed; for repos on GitHub install it and run: gh auth login"
   elif ! gh auth status >/dev/null 2>&1; then
@@ -436,8 +461,12 @@ check() { # check <status> <label> [detail]
 verify() {
   local name commit was plugin installed
   echo "gatehouse $(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo '(not a clone)') on $OS $(uname -m)$([ "$WSL" = 1 ] && echo ' (WSL)' || true)"
-  if has_python312; then check 0 "Python 3.12 or newer on PATH"; else check 1 "Python 3.12 or newer on PATH"; fi
+  echo "level: $LEVEL"
+  if [ "$TRK" = 1 ]; then
+    if has_python312; then check 0 "Python 3.12 or newer on PATH"; else check 1 "Python 3.12 or newer on PATH"; fi
+  fi
   for name in trk hx; do
+    if [ "$name" = trk ] && [ "$TRK" = 0 ]; then continue; fi
     if [ "$name" = hx ] && [ "$HX" = 0 ]; then continue; fi
     commit=$(pin "$name" commit)
     if ! command -v "$name" >/dev/null 2>&1; then check 1 "$name on PATH" "not found (is $BIN_DIR on PATH?)"; continue; fi
@@ -446,8 +475,10 @@ verify() {
     elif [ -z "$was" ]; then warn "$name is installed, but its commit is unknown (pin ${commit:0:7})"
     else check 1 "$name at its pin ${commit:0:7}" "installed is ${was:0:7}"; fi
   done
-  if [ "$HX" = 1 ]; then
+  if [ "$HX" = 1 ] || [ "$TRK" = 0 ]; then
     if command -v herdr >/dev/null 2>&1; then check 0 "herdr on PATH"; else check 1 "herdr on PATH"; fi
+  fi
+  if [ "$HX" = 1 ]; then
     if [ "$OS" = Darwin ]; then
       if launchctl print "gui/$(id -u)/com.hx.watch" 2>/dev/null | grep -q "state = running"; then check 0 "the hx watcher is running (launchd com.hx.watch)"
       else check 1 "the hx watcher is running (launchd com.hx.watch)"; fi
@@ -466,9 +497,11 @@ verify() {
       check 1 "Claude Code on PATH"
     fi
   fi
-  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then ok "GitHub CLI logged in"
-  else warn "GitHub CLI missing or logged out (needed for repos on GitHub)"; fi
-  case ":$PATH:" in *":$BIN_DIR:"*) check 0 "$BIN_DIR on PATH" ;; *) check 1 "$BIN_DIR on PATH" ;; esac
+  if [ "$TRK" = 1 ]; then
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then ok "GitHub CLI logged in"
+    else warn "GitHub CLI missing or logged out (needed for repos on GitHub)"; fi
+    case ":$PATH:" in *":$BIN_DIR:"*) check 0 "$BIN_DIR on PATH" ;; *) check 1 "$BIN_DIR on PATH" ;; esac
+  fi
   if [ "$VERIFY_FAILED" = 0 ]; then ok "all checks passed"
   else err "some checks failed; rerun install.sh to repair, or paste this output when asking for help"; fi
   return "$VERIFY_FAILED"
@@ -489,8 +522,8 @@ if [ "$UNINSTALL" = 1 ]; then
   DRYFLAG=()
   [ "$DRY" = 1 ] && DRYFLAG=(--dry-run)
   if [ "$HX" = 1 ] && [ -x "$SRC/hx/install.sh" ]; then run_logged "hx: uninstalling" "$SRC/hx/install.sh" --uninstall ${DRYFLAG[@]+"${DRYFLAG[@]}"} || exit 1; fi
-  if [ -x "$SRC/trk/install.sh" ]; then run_logged "trk: uninstalling" "$SRC/trk/install.sh" --uninstall ${DRYFLAG[@]+"${DRYFLAG[@]}"} || exit 1; fi
-  [ "$DRY" = 1 ] || rm -f "$RECORD"
+  if [ "$TRK" = 1 ] && [ -x "$SRC/trk/install.sh" ]; then run_logged "trk: uninstalling" "$SRC/trk/install.sh" --uninstall ${DRYFLAG[@]+"${DRYFLAG[@]}"} || exit 1; fi
+  [ "$DRY" = 1 ] || rm -f "$RECORD" "$LEVEL_FILE"
   lines=("gatehouse: uninstalled" ""
          "Kept: the clones in $SRC, trk's data (~/.local/share/trk) and your config."
          "The Claude Code plugins stay; remove them with:")
@@ -506,27 +539,37 @@ start_log
 info "clones: $SRC · log: $LOG"
 
 STATUS_trk=skipped STATUS_hx=skipped
-install_tool trk --no-editable ${ME_ARGS[@]+"${ME_ARGS[@]}"}
+if [ "$TRK" = 1 ]; then install_tool trk --no-editable ${ME_ARGS[@]+"${ME_ARGS[@]}"}; fi
 if [ "$HX" = 1 ]; then
   install_tool hx --no-editable ${ME_ARGS[@]+"${ME_ARGS[@]}"} ${HX_ARGS[@]+"${HX_ARGS[@]}"}
 fi
 if [ "$PLUGINS_ON" = 1 ]; then install_plugins; fi
-maybe_add_path
+if [ "$TRK" = 1 ]; then maybe_add_path; fi
 
 if [ "$DRY" = 1 ]; then ok "dry run: nothing was changed"; exit 0; fi
+echo "$LEVEL" >"$LEVEL_FILE"
 
-lines=("gatehouse: done" ""
-       "trk        $STATUS_trk at $(pin trk commit | cut -c1-7)")
-if [ "$HX" = 1 ]; then lines+=("hx         $STATUS_hx at $(pin hx commit | cut -c1-7)"); else lines+=("hx         skipped (--no-hx)"); fi
+lines=("gatehouse: done" "")
+if [ "$TRK" = 0 ]; then
+  lines+=("level      the needs-you queue: herdr and the workbench plugins, no trk or hx")
+else
+  lines+=("trk        $STATUS_trk at $(pin trk commit | cut -c1-7)")
+  if [ "$HX" = 1 ]; then lines+=("hx         $STATUS_hx at $(pin hx commit | cut -c1-7)"); else lines+=("hx         skipped (--no-hx)"); fi
+fi
 if [ "$PLUGINS_ON" = 1 ]; then
   lines+=("plugins    workbench $(pin workbench commit | cut -c1-7)")
   if [ ${#PLUGIN_LINES[@]} -gt 0 ]; then lines+=("${PLUGIN_LINES[@]}"); fi
 else
   lines+=("plugins    skipped (--no-plugins)")
 fi
-lines+=("" "Check it:   $HERE/install.sh --verify"
-        "Next:       open Claude Code in herdr and run /trk-create-program"
-        "Where:      clones in $SRC"
+lines+=("" "Check it:   $HERE/install.sh --verify")
+if [ "$TRK" = 0 ]; then
+  lines+=("Next:       restart Claude Code in herdr; when a session needs you, ⚑ N shows in every footer"
+          "Add more:   $HERE/install.sh --full adds trk and hx: gates, routed asks and the fleet")
+else
+  lines+=("Next:       open Claude Code in herdr and run /trk-create-program")
+fi
+lines+=("Where:      clones in $SRC"
         "Log:        $LOG"
         "Uninstall:  $HERE/install.sh --uninstall")
 [ "$QUIET" = 1 ] || draw_box '0;32' "${lines[@]}"

@@ -185,6 +185,40 @@ t_me_reaches_trk_and_hx() {
   teardown
 }
 
+t_queue_only_installs_the_plugins_without_trk_or_hx() {
+  setup; rm "$T/bin/uv"
+  out=$("$T/gh/install.sh" --queue-only 2>&1); code=$?
+  check "queue: succeeds without uv" test "$code" = 0
+  check "queue: no trk" not_logged "trk install.sh"
+  check "queue: no hx" not_logged "hx install.sh"
+  check "queue: no trk clone" test ! -e "$HOME/.local/share/gatehouse/trk"
+  check "queue: plugins installed" logged "claude plugin install herdr-jump@mjfork"
+  check "queue: says how to add more" says "--full adds trk and hx"
+  : >"$TEST_LOG"; "$T/gh/install.sh" >/dev/null 2>&1
+  check "queue: a plain rerun stays at the queue" not_logged "trk install.sh"
+  out=$(PLUGINS_INSTALLED="cockpit@mjfork ctx-bar@mjfork cache-timer@mjfork herdr-jump@mjfork turn-mode@mjfork" "$T/gh/install.sh" --verify 2>&1); code=$?
+  check "queue: verify skips trk and hx" test "$code" = 0
+  check "queue: verify names the level" says "level: queue"
+  : >"$TEST_LOG"; PATH="$T/bin:$PATH"; printf '#!/bin/sh\nexit 0\n' >"$T/bin/uv"; chmod +x "$T/bin/uv"
+  "$T/gh/install.sh" --full >/dev/null 2>&1
+  check "queue: --full adds trk" logged "trk install.sh --force --no-editable"
+  check "queue: --full adds hx" logged "hx install.sh --force --no-editable"
+  out=$("$T/gh/install.sh" --queue-only 2>&1); code=$?
+  check "queue: no stepping down over trk and hx" test "$code" = 2
+  check "queue: says to uninstall first" says "--uninstall first"
+  teardown
+}
+
+t_queue_only_needs_herdr_and_the_plugins() {
+  setup; rm "$T/bin/herdr"
+  out=$(PATH="$T/bin:/usr/bin:/bin" "$T/gh/install.sh" --queue-only 2>&1); code=$?
+  check "queue no herdr: refused" test "$code" = 1
+  check "queue no herdr: says why" says "needs-you queue lives in herdr"
+  "$T/gh/install.sh" --queue-only --no-plugins >/dev/null 2>&1; code=$?
+  check "queue no plugins: refused" test "$code" = 2
+  teardown
+}
+
 t_src_moves_the_clones() {
   setup; "$T/gh/install.sh" --no-plugins --src "$T/elsewhere" >/dev/null 2>&1
   check "src: clones there" test -d "$T/elsewhere/trk/.git"

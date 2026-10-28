@@ -221,7 +221,20 @@ Running a fleet is cheap only if every session is. gatehouse builds that in:
 
 ## Install
 
-**Prerequisites:**
+### Choose a level
+
+You don't have to take it all at once.
+
+| Level | What you get | What it needs | Install |
+|---|---|---|---|
+| **The queue** | `⚑ N` in every footer when a session needs you, `/needs-me` to jump to it, and the other footer instruments (cache time left, what fills the context, your heaviest sessions). You answer in the pane. | herdr, Claude Code | add `-s -- --queue-only` after `bash` in the one-liner |
+| **Full** | Everything above, plus the tracker and the router: programs, stage gates, independent review, merging by risk, a fleet of workers, and questions sorted by how much work each holds up and routed back to the agent that asked | everything in the table below | the one-liner as it is |
+
+The queue is a good way to start: run sessions as you do now, and stop hunting for the one that's
+waiting. When you want gates and a fleet, run the installer again with `--full`. Updates keep the
+level you chose.
+
+**Prerequisites** (full; the queue needs only git, python3, herdr and Claude Code):
 
 | Needs | Check | Get it |
 |---|---|---|
@@ -351,6 +364,8 @@ Set `STATUSLINE_TZ` (for example `America/Chicago`) to pin the time zone. To rem
 | `--verify` | Check an existing install and change nothing; paste its output when asking for help |
 | `--src DIR` | Where the clones go (default `~/.local/share/gatehouse`) |
 | `--me NAME` | Your name in the tracker and router, for a new store (default: your user name) |
+| `--queue-only` | Just the needs-you queue: the workbench plugins, no tracker or router. Later runs stay at this level |
+| `--full` | The tracker, the router and the plugins (the default; moves a queue-only install up) |
 | `--no-hx` | The tracker only; no herdr needed |
 | `--no-plugins` | Leave Claude Code's plugins alone |
 | `--plugins LIST` | Choose the plugins, e.g. `--plugins cache-timer,herdr-jump` |
