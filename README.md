@@ -274,6 +274,11 @@ git clone https://github.com/mjfork/gatehouse ~/.local/share/gatehouse/gatehouse
 ~/.local/share/gatehouse/gatehouse/install.sh
 ```
 
+With `--full` it asks one question: may sessions run `trk` without a permission prompt? Say yes. Sessions run
+trk constantly, and without the rule Claude Code asks you about every call. Yes adds
+`Bash(trk *)` to `~/.claude/settings.json`, which covers trk and nothing else. With no terminal to
+ask on, it leaves the rule out and says how to add it.
+
 It ends with a summary box: each part as installed, updated, current or skipped, then what to do
 next, where the clones and the log are, and how to uninstall. You can run it again at any time,
 and it skips anything already at its pin. If `~/.local/bin` isn't on your PATH, add `--easy-mode`
@@ -314,7 +319,8 @@ Everything goes under your home folder. Nothing needs `sudo`.
 │   trk-drive-program, hx-work           what teaches sessions the tracker and the program loop
 ├── settings.json                        hooks added: SessionStart, UserPromptSubmit and
 │                                        PostToolUse (keep claims alive, warn on a stale
-│                                        checkout); Linux also gets a memory guard on Bash
+│                                        checkout); Linux also gets a memory guard on Bash;
+│                                        Bash(trk *) in permissions.allow, if you said yes
 └── plugins/                             the mjfork marketplace (→ the workbench clone) and cockpit,
                                          ctx-bar, cache-timer, herdr-jump, turn-mode
 
@@ -380,6 +386,7 @@ Set `STATUSLINE_TZ` (for example `America/Chicago`) to pin the time zone. To rem
 | `--no-plugins` | Leave Claude Code's plugins alone |
 | `--plugins LIST` | Choose the plugins, e.g. `--plugins cache-timer,herdr-jump` |
 | `--force` | Reinstall everything, and replace installed skills that differ from the pinned copy (old copies are backed up) |
+| `--allow-trk` / `--no-allow-trk` | Answer the permission question up front: let sessions run `trk` without a prompt, or don't |
 | `--easy-mode` | Add `~/.local/bin` to PATH in `~/.zshrc` and `~/.bashrc` if it's missing |
 | `--uninstall` | Remove what was installed; your clones, data and config stay |
 | `--verbose` | Show each tool installer's own output (it always goes to the log) |

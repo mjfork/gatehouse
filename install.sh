@@ -53,6 +53,9 @@ Run it again to update: it skips what is already at its pin.
   --plugins LIST    comma-separated workbench plugins (default: the list in versions.toml)
   --force           reinstall everything, and replace installed skills and scripts that differ
                     from the pinned copy (your edits, or an older version); old copies are backed up
+  --allow-trk       let Claude Code sessions run trk without a permission prompt: adds
+                    Bash(trk *) to ~/.claude/settings.json without asking first
+  --no-allow-trk    leave that rule out without asking (with neither, the installer asks)
   --easy-mode       add ~/.local/bin to PATH in ~/.zshrc and ~/.bashrc when it is missing
   --verify          check an existing install and change nothing (paste its output when asking for help)
   --dry-run         print what would happen and change nothing
@@ -66,7 +69,7 @@ Options after \`--\` go to hx's installer, e.g. \`install.sh -- --no-sidebar\`.
 EOF
 }
 
-LEVEL="" TRK=1 ME="" HX=1 PLUGINS_ON=1 PLUGINS="" FORCE=0 EASY=0 VERIFY=0 DRY=0 UNINSTALL=0 VERBOSE=0 QUIET=0 NO_GUM=0
+ALLOW="" LEVEL="" TRK=1 ME="" HX=1 PLUGINS_ON=1 PLUGINS="" FORCE=0 EASY=0 VERIFY=0 DRY=0 UNINSTALL=0 VERBOSE=0 QUIET=0 NO_GUM=0
 HX_ARGS=()
 need_value() { [ $# -ge 2 ] && [ -n "$2" ] || { echo "install.sh: $1 needs a value (see --help)" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
@@ -85,6 +88,8 @@ while [ $# -gt 0 ]; do
     --verbose) VERBOSE=1 ;;
     --quiet) QUIET=1 ;;
     --no-gum) NO_GUM=1 ;;
+    --allow-trk) ALLOW=yes; LEVEL=full ;;
+    --no-allow-trk) ALLOW=no; LEVEL=full ;;
     -h|--help) usage; exit 0 ;;
     --) shift; HX_ARGS=("$@"); [ $# -gt 0 ] && LEVEL=full; break ;;
     *) echo "install.sh: unknown option $1 (see --help)" >&2; exit 2 ;;
@@ -277,6 +282,33 @@ maybe_add_path() {
     if [ "$updated" = 1 ]; then warn "added $BIN_DIR to PATH in your shell rc files; open a new shell"; return 0; fi
   fi
   warn "$BIN_DIR is not on PATH: add it (or rerun with --easy-mode), or Claude Code sessions won't find trk and hx"
+}
+
+# Whether sessions may run trk without a permission prompt. Asked here, on the terminal, because
+# trk's installer runs under a spinner with its output in the log. The answer always goes on to it
+# as --allow-trk or --no-allow-trk, so it never asks a second time.
+TRK_RULE='Bash(trk *)'
+TTY=${GATEHOUSE_TTY:-/dev/tty}   # tests point it elsewhere
+rule_present() {
+  python3 -I -c 'import json, sys
+try: allow = json.load(open(sys.argv[1])).get("permissions", {}).get("allow", [])
+except Exception: sys.exit(1)
+sys.exit(0 if sys.argv[2] in allow else 1)' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" "$TRK_RULE" 2>/dev/null
+}
+choose_allow() {
+  [ -n "$ALLOW" ] && return 0
+  if rule_present; then ALLOW=yes; return 0; fi
+  [ "$DRY" = 1 ] && return 0   # trk's own dry run reports that it would ask
+  # /dev/tty can exist with no terminal behind it (macOS), so only opening it tells.
+  if ! (exec 3<>"$TTY") 2>/dev/null; then ALLOW=no; return 0; fi
+  local answer=""
+  {
+    echo
+    echo "Claude Code asks before each command a session runs, and sessions run trk constantly."
+    printf 'Let sessions run trk without asking? This adds %s to ~/.claude/settings.json; it covers trk only. [y/N] ' "$TRK_RULE"
+  } >"$TTY"
+  read -r answer <"$TTY" || answer=""
+  case "$answer" in y|Y|yes|YES|Yes) ALLOW=yes ;; *) ALLOW=no ;; esac
 }
 
 # ═══ Lock, temp files and the log ═════════════════════════════════════════════
@@ -519,6 +551,8 @@ verify() {
   if [ "$TRK" = 1 ]; then
     if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then ok "GitHub CLI logged in"
     else warn "GitHub CLI missing or logged out (needed for repos on GitHub)"; fi
+    if rule_present; then ok "sessions run trk without a permission prompt"
+    else warn "sessions ask permission for each trk command (install.sh --allow-trk stops that)"; fi
     case ":$PATH:" in *":$BIN_DIR:"*) check 0 "$BIN_DIR on PATH" ;; *) check 1 "$BIN_DIR on PATH" ;; esac
   fi
   if [ "$VERIFY_FAILED" = 0 ]; then ok "all checks passed"
@@ -553,12 +587,15 @@ if [ "$UNINSTALL" = 1 ]; then
 fi
 
 preflight
+[ "$TRK" = 1 ] && choose_allow
+ALLOW_ARGS=()
+if [ "$ALLOW" = yes ]; then ALLOW_ARGS=(--allow-trk); elif [ "$ALLOW" = no ]; then ALLOW_ARGS=(--no-allow-trk); fi
 take_lock
 start_log
 info "clones: $SRC · log: $LOG"
 
 STATUS_trk=skipped STATUS_hx=skipped
-if [ "$TRK" = 1 ]; then install_tool trk --no-editable ${ME_ARGS[@]+"${ME_ARGS[@]}"}; fi
+if [ "$TRK" = 1 ]; then install_tool trk --no-editable ${ME_ARGS[@]+"${ME_ARGS[@]}"} ${ALLOW_ARGS[@]+"${ALLOW_ARGS[@]}"}; fi
 if [ "$HX" = 1 ]; then
   install_tool hx --no-editable ${ME_ARGS[@]+"${ME_ARGS[@]}"} ${HX_ARGS[@]+"${HX_ARGS[@]}"}
 fi
@@ -580,6 +617,10 @@ if [ "$PLUGINS_ON" = 1 ]; then
   if [ ${#PLUGIN_LINES[@]} -gt 0 ]; then lines+=("${PLUGIN_LINES[@]}"); fi
 else
   lines+=("plugins    skipped (--no-plugins)")
+fi
+if [ "$TRK" = 1 ]; then
+  if [ "$ALLOW" = yes ]; then lines+=("trk        runs without a permission prompt")
+  else lines+=("trk        asks permission each time; to stop that: $HERE/install.sh --allow-trk"); fi
 fi
 lines+=("" "Check it:   $HERE/install.sh --verify")
 if [ "$TRK" = 0 ]; then

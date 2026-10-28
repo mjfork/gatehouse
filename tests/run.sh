@@ -8,7 +8,7 @@ PASS=0 FAIL=0
 
 setup() {
   T=$(mktemp -d)
-  export HOME="$T/home" TEST_LOG="$T/log"
+  export HOME="$T/home" TEST_LOG="$T/log" GATEHOUSE_TTY="$T/no-terminal/tty"
   unset XDG_DATA_HOME XDG_STATE_HOME
   mkdir -p "$HOME/.local/bin" "$T/bin" "$T/repos"
   : >"$TEST_LOG"
@@ -252,6 +252,27 @@ t_cockpit_gets_stack_auto_only_when_unset() {
   check "stack: a chosen stack is left alone" not_logged "--values-stdin"
   : >"$TEST_LOG"; "$T/gh/install.sh" >/dev/null 2>&1
   check "stack: a cockpit without the option is left alone" not_logged "--values-stdin"
+  teardown
+}
+
+t_trk_permission_is_asked_once_and_passed_on() {
+  setup; out=$("$T/gh/install.sh" --full --no-plugins 2>&1)
+  check "allow: no terminal leaves the rule out" logged "trk install.sh --force --no-editable --no-allow-trk"
+  check "allow: summary says how to change it" grep -q -- "--allow-trk" <<<"$out"
+  check "allow: hx never gets it" not_logged "hx install.sh --force --no-editable --no-allow-trk"
+  : >"$TEST_LOG"; "$T/gh/install.sh" --full --no-plugins --force --allow-trk >/dev/null 2>&1
+  check "allow: --allow-trk reaches trk" logged "trk install.sh --force --no-editable --allow-trk"
+  : >"$TEST_LOG"; "$T/gh/install.sh" --full --no-plugins --force --no-allow-trk >/dev/null 2>&1
+  check "allow: --no-allow-trk reaches trk" logged "trk install.sh --force --no-editable --no-allow-trk"
+  mkdir -p "$HOME/.claude"; printf '{"permissions": {"allow": ["Bash(trk *)"]}}' >"$HOME/.claude/settings.json"
+  : >"$TEST_LOG"; "$T/gh/install.sh" --full --no-plugins --force >/dev/null 2>&1
+  check "allow: a rule already there counts as yes" logged "trk install.sh --force --no-editable --allow-trk"
+  teardown
+}
+
+t_a_dry_run_never_decides_the_trk_permission() {
+  setup; "$T/gh/install.sh" --full --dry-run --no-plugins >/dev/null 2>&1
+  check "allow dry: no flag, so trk's preview says it would ask" not_logged "allow-trk"
   teardown
 }
 
