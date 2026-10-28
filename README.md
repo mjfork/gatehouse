@@ -8,12 +8,13 @@
 decisions that need you.**
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/mjfork/gatehouse/main/install.sh?$(date +%s)" | bash
+curl -fsSL "https://raw.githubusercontent.com/mjfork/gatehouse/main/install.sh?$(date +%s)" | bash            # the plugins
+curl -fsSL "https://raw.githubusercontent.com/mjfork/gatehouse/main/install.sh?$(date +%s)" | bash -s -- --full  # the full fleet
 ```
 
-Linux and macOS · needs [herdr](https://herdr.dev), [Claude Code](https://claude.com/claude-code),
-[uv](https://docs.astral.sh/uv/) and Python 3.12+ · [prerequisites](#install) ·
-[what gets installed where](#what-gets-installed-and-where)
+Linux and macOS · needs [herdr](https://herdr.dev) and [Claude Code](https://claude.com/claude-code);
+the full fleet also needs [uv](https://docs.astral.sh/uv/) and Python 3.12+ ·
+[choose a level](#choose-a-level) · [what gets installed where](#what-gets-installed-and-where)
 
 </div>
 
@@ -51,6 +52,10 @@ PR, a passing test run, an independent review.
 | **You can see each session** | Footers show cache time left, what fills the context, and which sessions are heaviest. |
 
 ## How you use it
+
+This is the full fleet (`--full`). With the plugins alone, break the work into a spec and tickets
+with your own skills, then run `/cockpit:implement-with-herdr <spec>`; questions still reach you as
+`⚑ N`.
 
 **1. Open a workspace in herdr for the work.**
 
@@ -223,18 +228,24 @@ Running a fleet is cheap only if every session is. gatehouse builds that in:
 
 ### Choose a level
 
-You don't have to take it all at once.
+The one-liner installs the first level. Add `--full` for the second.
 
 | Level | What you get | What it needs | Install |
 |---|---|---|---|
-| **The queue** | `⚑ N` in every footer when a session needs you, `/needs-me` to jump to it, and the other footer instruments (cache time left, what fills the context, your heaviest sessions). You answer in the pane. | herdr, Claude Code | add `-s -- --queue-only` after `bash` in the one-liner |
-| **Full** | Everything above, plus the tracker and the router: programs, stage gates, independent review, merging by risk, a fleet of workers, and questions sorted by how much work each holds up and routed back to the agent that asked | everything in the table below | the one-liner as it is |
+| **Plugins** (the default) | `⚑ N` in every footer when a session needs you and `/needs-me` to jump to it; the footer instruments (cache time left, what fills the context, your heaviest sessions); and cockpit, which takes a spec you've broken into tickets and builds it with an orchestrator and parallel workers, each in its own worktree. You answer in the pane. | git, python3, herdr, Claude Code | the one-liner as it is |
+| **Full** | Everything above, plus the tracker and the router: programs, stage gates, independent review, merging by risk, and questions sorted by how much work each holds up and routed back to the agent that asked | everything in the table below | add `-s -- --full` after `bash` |
 
-The queue is a good way to start: run sessions as you do now, and stop hunting for the one that's
-waiting. When you want gates and a fleet, run the installer again with `--full`. Updates keep the
-level you chose.
+Start with the plugins: run sessions as you do now, and stop hunting for the one that's waiting.
+When you want gates and programs, run the installer again with `--full`. Updates keep the level
+you chose.
 
-**Prerequisites** (full; the queue needs only git, python3, herdr and Claude Code):
+Workers build with the skill stack you already use (Matt Pocock's skills, superpowers,
+agent-skills, compound-engineering, GSD, spec-kit or BMAD). By default cockpit picks the first
+installed of Matt Pocock's skills and superpowers, else Claude Code's own steps. Name another for
+one run (`/cockpit:implement-with-herdr <spec> using superpowers`), or change the default in
+`/config`.
+
+**Prerequisites** (for Full; the plugins need only git, python3, herdr and Claude Code):
 
 | Needs | Check | Get it |
 |---|---|---|
@@ -364,8 +375,7 @@ Set `STATUSLINE_TZ` (for example `America/Chicago`) to pin the time zone. To rem
 | `--verify` | Check an existing install and change nothing; paste its output when asking for help |
 | `--src DIR` | Where the clones go (default `~/.local/share/gatehouse`) |
 | `--me NAME` | Your name in the tracker and router, for a new store (default: your user name) |
-| `--queue-only` | Just the needs-you queue: the workbench plugins, no tracker or router. Later runs stay at this level |
-| `--full` | The tracker, the router and the plugins (the default; moves a queue-only install up) |
+| `--full` | Add the tracker and the router to the plugins. Later runs keep it; `--no-hx`, `--me` and options after `--` imply it |
 | `--no-hx` | The tracker only; no herdr needed |
 | `--no-plugins` | Leave Claude Code's plugins alone |
 | `--plugins LIST` | Choose the plugins, e.g. `--plugins cache-timer,herdr-jump` |

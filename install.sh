@@ -44,9 +44,10 @@ Run it again to update: it skips what is already at its pin.
 
   --src DIR         where the clones go (default: ~/.local/share/gatehouse)
   --me NAME         your name in trk and hx, for a new store and config (default: your user name)
-  --queue-only      just the needs-you queue: the workbench plugins in herdr, without trk or hx.
-                    Later runs stay at this level until you pass --full
-  --full            the whole thing: trk, hx and the plugins (the default)
+  --full            add trk and hx to the plugins: stage gates, independent review, programs and
+                    routed asks. Without it, only the workbench plugins are installed (the
+                    needs-you queue, the footers, cockpit). Later runs keep the level
+                    (--no-hx, --me and options after -- imply --full)
   --no-hx           install trk only (hx needs herdr)
   --no-plugins      leave Claude Code's plugins alone
   --plugins LIST    comma-separated workbench plugins (default: the list in versions.toml)
@@ -71,10 +72,9 @@ need_value() { [ $# -ge 2 ] && [ -n "$2" ] || { echo "install.sh: $1 needs a val
 while [ $# -gt 0 ]; do
   case "$1" in
     --src) need_value "$@"; SRC=$2; shift ;;
-    --me) need_value "$@"; ME=$2; shift ;;
-    --queue-only) LEVEL=queue ;;
+    --me) need_value "$@"; ME=$2; LEVEL=full; shift ;;
     --full) LEVEL=full ;;
-    --no-hx) HX=0 ;;
+    --no-hx) HX=0; LEVEL=full ;;
     --no-plugins) PLUGINS_ON=0 ;;
     --plugins) need_value "$@"; PLUGINS=$2; shift ;;
     --force) FORCE=1 ;;
@@ -86,7 +86,7 @@ while [ $# -gt 0 ]; do
     --quiet) QUIET=1 ;;
     --no-gum) NO_GUM=1 ;;
     -h|--help) usage; exit 0 ;;
-    --) shift; HX_ARGS=("$@"); break ;;
+    --) shift; HX_ARGS=("$@"); [ $# -gt 0 ] && LEVEL=full; break ;;
     *) echo "install.sh: unknown option $1 (see --help)" >&2; exit 2 ;;
   esac
   shift
@@ -192,20 +192,19 @@ MARKET=$(pin workbench marketplace)
 IFS=, read -r -a WANTED <<<"${PLUGINS:-$(pin workbench plugins)}"
 RECORD="$STATE_HOME/gatehouse/installed"   # name=commit, for each tool this installer put in place
 
-# The level: "queue" (herdr and the workbench plugins only) or "full" (trk and hx too). A run with
-# neither --queue-only nor --full keeps the level of the last install, so an update never adds
-# trk and hx to a queue-only box by surprise.
+# The level: "plugins" (herdr and the workbench plugins, the default) or "full" (trk and hx too,
+# with --full). A run without --full keeps the level of the last install, so an update never
+# drops trk and hx; an install from before levels, with trk recorded, counts as full.
 LEVEL_FILE="$STATE_HOME/gatehouse/level"
 if [ -z "$LEVEL" ]; then
   LEVEL=$(cat "$LEVEL_FILE" 2>/dev/null || true)
-  [ "$LEVEL" = queue ] || LEVEL=full
-fi
-if [ "$LEVEL" = queue ]; then
-  TRK=0 HX=0
-  if [ "$PLUGINS_ON" = 0 ]; then echo "install.sh: --queue-only is the plugins, so it can't take --no-plugins" >&2; exit 2; fi
-  if [ "$UNINSTALL" = 0 ] && [ -s "$RECORD" ]; then
-    echo "install.sh: trk and hx are installed here; to step down to the queue alone, run --uninstall first" >&2; exit 2
+  if [ "$LEVEL" != full ] && [ "$LEVEL" != plugins ]; then
+    if [ -s "$RECORD" ]; then LEVEL=full; else LEVEL=plugins; fi
   fi
+fi
+if [ "$LEVEL" = plugins ]; then
+  TRK=0 HX=0
+  if [ "$PLUGINS_ON" = 0 ]; then echo "install.sh: without --full there is nothing to install but the plugins, so --no-plugins needs --full" >&2; exit 2; fi
 fi
 
 # ═══ Platform and preflight ═══════════════════════════════════════════════════
@@ -449,6 +448,26 @@ install_plugins() {
       if run_logged "plugins: installing $plugin" claude plugin install "$plugin@$MARKET"; then PLUGIN_LINES+=("  $plugin: installed"); else PLUGIN_LINES+=("  $plugin: failed (see the log)"); fi
     fi
   done
+  set_default_stack
+}
+
+# cockpit's `stack` option picks the skill stack its workers build with. Claude Code leaves an
+# unsaved option unsubstituted in the skill, so write "auto" (the first installed of mattpocock
+# and superpowers, else Claude Code's own steps) when the option exists and nothing is saved.
+# A value the person chose is never touched; a cockpit without the option is left alone.
+set_default_stack() {
+  case " ${WANTED[*]} " in *" cockpit "*) ;; *) return 0 ;; esac
+  [ "$DRY" = 1 ] && { info "would set cockpit's build stack to auto, if it has the option and none is saved"; return 0; }
+  local state
+  state=$(claude plugin configure "cockpit@$MARKET" --json 2>/dev/null | python3 -I -c 'import json, sys
+try: d = json.load(sys.stdin)
+except Exception: sys.exit()
+if "stack" in d.get("schema", {}): print("unset" if "stack" in d.get("unconfigured", []) else "set")' 2>/dev/null || true)
+  [ "$state" = unset ] || return 0
+  echo "\$ claude plugin configure cockpit@$MARKET --values-stdin <<< {\"stack\":\"auto\"}" >>"$LOG"
+  if printf '{"stack":"auto"}' | claude plugin configure "cockpit@$MARKET" --values-stdin >>"$LOG" 2>&1; then
+    PLUGIN_LINES+=("  cockpit builds with: auto (name a stack in the prompt, or change it in /config)")
+  fi
 }
 
 # ═══ --verify: check an install and change nothing ════════════════════════════
@@ -551,7 +570,7 @@ echo "$LEVEL" >"$LEVEL_FILE"
 
 lines=("gatehouse: done" "")
 if [ "$TRK" = 0 ]; then
-  lines+=("level      the needs-you queue: herdr and the workbench plugins, no trk or hx")
+  lines+=("level      the plugins: the needs-you queue, the footers and cockpit (no trk or hx)")
 else
   lines+=("trk        $STATUS_trk at $(pin trk commit | cut -c1-7)")
   if [ "$HX" = 1 ]; then lines+=("hx         $STATUS_hx at $(pin hx commit | cut -c1-7)"); else lines+=("hx         skipped (--no-hx)"); fi
