@@ -141,6 +141,11 @@ why, why it's RED, the impact if it's wrong, the evidence, the rollback, the cri
 or hold, where to look, and a recommendation. Your review goes where it matters, and GREEN work
 never waits on you. A change to the `.trk/blast-radius` file itself is always RED.
 
+**Keep RED small.** Every RED change waits for you, so a wide RED map fills your queue and slows
+the whole fleet. Mark RED only what you would truly want to approve yourself: schema and
+migrations, auth and secrets, money, and the map itself. Make the code that's merely important
+YELLOW, so an independent audit covers it without you. Files the map doesn't name are GREEN.
+
 ## What you'll see
 
 <!-- screenshot: docs/images/needs-you.png
