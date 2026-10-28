@@ -3,16 +3,16 @@
 
 [trk]
 repo = "https://github.com/mjfork/trk"
-commit = "7ad16d090ef0204a49e6d6bbdcc766e884250d64"
+commit = "9a3c329cdb6495e6ade62dfaf375498ab01c95c9"
 
 [hx]
 repo = "https://github.com/mjfork/hx"
-commit = "75228f0673ff1322353ae5f9e58bc76ad9f22b17"
+commit = "ff63de95be9adb7b87bc67d6260b97fbc3dc2646"
 
 [workbench]
 # Claude Code plugins, installed from the marketplace (it follows GitHub; the commit is the one
 # this set was tested with).
 repo = "https://github.com/mjfork/workbench"
-commit = "7d66451119f5c9c95cd6d3a13598f211c559079e"
+commit = "f0b47c53a65a1349d9bfbd5617eb977e92b79c20"
 marketplace = "mjfork"
 plugins = ["cockpit", "ctx-bar", "cache-timer", "herdr-jump", "turn-mode"]
